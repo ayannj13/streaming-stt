@@ -11,7 +11,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# download a small English Vosk model and place the unzipped folder inside the "models" folder: models/vosk-en/  (contains am/, graph/, conf/, etc.)
+**download a small English Vosk model and place the unzipped folder inside the "models" folder: models/vosk-en/  (contains am/, graph/, conf/, etc.)**
 
 **Then run the server:**
 
@@ -59,7 +59,7 @@ time_to_final.time_to_final_ms – time from utterance start : final text
 ls -lt logs | head
 tail -n +1 logs/<LATEST>.jsonl | grep -E 'first_partial|time_to_final' 
 
-# replace the <LATEST> with the session and its id together eg.(session_1756567347137.jsonl)
+** replace the <LATEST> with the session and its id together eg.(session_1756567347137.jsonl)**
 
 For evaluating **WER**: Put what you wanted to say as a text in refs.json, and what is recognized by the system in hyps.json, and in the terminal run:
 
