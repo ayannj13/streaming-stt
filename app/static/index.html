@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Streaming STT Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; }
+    .partial { color: #555; }
+    .final { color: #000; font-weight: 600; }
+    .seg { margin: .4rem 0; }
+    button { padding: 8px 14px; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h2>Streaming STT Demo</h2>
+  <p id="status">Idle</p>
+  <button id="start">Start mic</button>
+  <button id="stop" disabled>Stop</button>
+  <div id="out"></div>
+
+<script>
+const WS_URL = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+let ws, mediaStream, processor, audioCtx, seq = 0, running = false;
+
+function int16FromFloat32(float32) {
+  const s = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const x = Math.max(-1, Math.min(1, float32[i]));
+    s[i] = x < 0 ? x * 0x8000 : x * 0x7FFF;
+  }
+  return s;
+}
+
+async function start() {
+  document.getElementById('status').textContent = "Connecting…";
+  running = true;
+  document.getElementById('start').disabled = true;
+  document.getElementById('stop').disabled = false;
+
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = async () => {
+    document.getElementById('status').textContent = "Mic permission…";
+    // Try to create a 16k context; browsers may ignore and use native rate, but this is OK for a PoC.
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const source = audioCtx.createMediaStreamSource(mediaStream);
+
+    const bufSize = 2048; // small chunk for low latency
+    processor = audioCtx.createScriptProcessor(bufSize, 1, 1);
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+    document.getElementById('status').textContent = "Streaming… speak now";
+    processor.onaudioprocess = (e) => {
+      if (!running || ws.readyState !== WebSocket.OPEN) return;
+      const input = e.inputBuffer.getChannelData(0);
+      const int16 = int16FromFloat32(input);
+      const bytes = new Uint8Array(int16.buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const b64 = btoa(binary);
+      ws.send(JSON.stringify({ type:"audio", pcm16le: b64, seq: seq++ }));
+    };
+  };
+
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    const out = document.getElementById('out');
+    if (msg.type === 'partial') {
+      let el = document.getElementById('partial');
+      if (!el) { el = document.createElement('div'); el.id = 'partial'; el.className = 'partial seg'; out.appendChild(el); }
+      el.textContent = msg.text;
+    } else if (msg.type === 'final') {
+      const el = document.createElement('div');
+      el.className = 'final seg';
+      el.textContent = msg.text;
+      out.appendChild(el);
+      const p = document.getElementById('partial');
+      if (p) p.remove();
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('status').textContent = "Disconnected.";
+  };
+}
+
+function stop() {
+  running = false;
+  document.getElementById('start').disabled = false;
+  document.getElementById('stop').disabled = true;
+  if (processor) { try { processor.disconnect(); } catch(e){} }
+  if (audioCtx) { try { audioCtx.close(); } catch(e){} }
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+  document.getElementById('status').textContent = "Stopped.";
+}
+
+document.getElementById('start').onclick = start;
+document.getElementById('stop').onclick = stop;
+</script>
+</body>
+</html>
